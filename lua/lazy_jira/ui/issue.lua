@@ -7,6 +7,8 @@ local M = {
 	_suspend_history = false,
 }
 
+local ns_help = vim.api.nvim_create_namespace("lazy_jira_help_hint")
+
 local function render_issue_in_current_buf(lines)
 	local layout = lazy_jira.config.layout
 	local cur_ft = vim.bo.filetype
@@ -28,6 +30,11 @@ local function render_issue_in_current_buf(lines)
 	vim.bo[bufnr].swapfile = false
 	vim.bo[bufnr].modifiable = true
 	vim.bo[bufnr].filetype = "lazy_jira_issue"
+
+	vim.api.nvim_buf_set_extmark(bufnr, ns_help, 0, 0, {
+		virt_text = { { "[? help]", "Comment" } },
+		virt_text_pos = "right_align",
+	})
 
 	return bufnr
 end

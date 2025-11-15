@@ -5,6 +5,7 @@ local ui_util = require("lazy_jira.ui.util")
 
 local M = {}
 
+local ns_help = vim.api.nvim_create_namespace("lazy_jira_help_hint")
 local ns_board = vim.api.nvim_create_namespace("lazy_jira_board")
 
 local function apply_kanban_highlights(bufnr)
@@ -152,6 +153,11 @@ local function open_board_buffer(lines)
 	vim.bo[bufnr].modifiable = false
 	vim.bo[bufnr].filetype = "lazy_jira_board"
 	vim.bo[bufnr].buflisted = true
+
+	vim.api.nvim_buf_set_extmark(bufnr, ns_help, 0, 0, {
+		virt_text = { { "[? help]", "Comment" } },
+		virt_text_pos = "right_align",
+	})
 
 	return bufnr
 end
