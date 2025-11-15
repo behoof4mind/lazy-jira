@@ -9,6 +9,146 @@ local M = {
 
 local ns_help = vim.api.nvim_create_namespace("lazy_jira_help_hint")
 
+local function inline_to_plain(nodes)
+	local parts = {}
+
+	local function handle(node)
+		if type(node) ~= "table" then
+			return
+		end
+
+		if node.type == "text" then
+			if node.text and node.text ~= "" then
+				table.insert(parts, node.text)
+			end
+		elseif node.type == "hardBreak" then
+			table.insert(parts, " ")
+		elseif node.type == "inlineCard" then
+			local attrs = node.attrs or {}
+			local href = attrs.url or attrs.href or ""
+			local label = attrs.title or attrs.text or href
+			if label and label ~= "" then
+				table.insert(parts, label)
+			elseif href ~= "" then
+				table.insert(parts, href)
+			end
+		elseif node.type == "emoji" then
+			local attrs = node.attrs or {}
+			local txt = attrs.text or attrs.shortName or ""
+			if txt ~= "" then
+				table.insert(parts, txt)
+			end
+		elseif node.type == "mention" then
+			local attrs = node.attrs or {}
+			local txt = attrs.text or (attrs.id and ("@" .. attrs.id)) or ""
+			if txt ~= "" then
+				table.insert(parts, txt)
+			end
+		end
+
+		if node.content then
+			for _, c in ipairs(node.content) do
+				handle(c)
+			end
+		end
+	end
+
+	for _, n in ipairs(nodes or {}) do
+		handle(n)
+	end
+
+	return table.concat(parts, "")
+end
+
+local function adf_to_plain_lines(desc)
+	if not desc then
+		return { "<no description>" }
+	end
+
+	if type(desc) == "string" then
+		return vim.split(desc, "\n", { plain = true })
+	end
+
+	if type(desc) ~= "table" then
+		return { "<unsupported description format>" }
+	end
+
+	local out = {}
+
+	local function handle_block(node, prefix)
+		if type(node) ~= "table" then
+			return
+		end
+		prefix = prefix or ""
+
+		if node.type == "paragraph" then
+			local line = inline_to_plain(node.content or {})
+			line = line:gsub("%s+$", "")
+			if line ~= "" then
+				table.insert(out, prefix .. line)
+			end
+			return
+		end
+
+		if node.type == "codeBlock" then
+			local parts = {}
+			for _, c in ipairs(node.content or {}) do
+				if c.type == "text" and c.text then
+					table.insert(parts, c.text)
+				end
+			end
+			local text = table.concat(parts, "")
+			if text ~= "" then
+				local lines = vim.split(text, "\n", { plain = true })
+				for _, l in ipairs(lines) do
+					table.insert(out, prefix .. "    " .. l)
+				end
+			end
+			return
+		end
+
+		if node.type == "bulletList" or node.type == "orderedList" then
+			for _, li in ipairs(node.content or {}) do
+				handle_block(li, prefix)
+			end
+			return
+		end
+
+		if node.type == "listItem" then
+			local first = true
+			for _, child in ipairs(node.content or {}) do
+				if first then
+					handle_block(child, "• ")
+					first = false
+				else
+					handle_block(child, "  ")
+				end
+			end
+			return
+		end
+
+		if node.content then
+			for _, c in ipairs(node.content) do
+				handle_block(c, prefix)
+			end
+		end
+	end
+
+	if desc.type == "doc" and desc.content then
+		for _, n in ipairs(desc.content) do
+			handle_block(n)
+		end
+	else
+		handle_block(desc)
+	end
+
+	if #out == 0 then
+		return { "<empty>" }
+	end
+
+	return out
+end
+
 local function render_issue_in_current_buf(lines)
 	local layout = lazy_jira.config.layout
 	local cur_ft = vim.bo.filetype
@@ -288,7 +428,7 @@ function M.delete_comment()
 		return
 	end
 
-	local meta = get_comment_at_cursor()
+	local meta = get_comment_meta() and get_comment_at_cursor() or nil
 	if not meta or not meta.id then
 		vim.notify("[lazy_jira] Not a comment", vim.log.levels.WARN)
 		return
@@ -493,7 +633,7 @@ function M.show_issue(key)
 	table.insert(lines, "■ Description")
 	table.insert(lines, "")
 
-	for _, ln in ipairs(util.format_description(f.description)) do
+	for _, ln in ipairs(adf_to_plain_lines(f.description)) do
 		table.insert(lines, "  " .. ln)
 	end
 
@@ -574,7 +714,7 @@ function M.show_issue(key)
 		local header = #lines + 1
 		table.insert(lines, ("  • %s — %s"):format(c.author.displayName, util.format_datetime(c.created)))
 
-		for _, ln in ipairs(util.format_description(c.body)) do
+		for _, ln in ipairs(adf_to_plain_lines(c.body)) do
 			table.insert(lines, "    " .. ln)
 		end
 		table.insert(lines, "")

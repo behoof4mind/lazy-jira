@@ -1,4 +1,3 @@
--- lua/lazy_jira/ui/util.lua
 local lazy_jira = require("lazy_jira")
 
 local M = {}
@@ -35,7 +34,6 @@ function M.format_description(desc)
     end
 
     for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
-      -- indent code lines to visually separate
       table.insert(out, "    " .. line)
     end
   end
@@ -165,7 +163,6 @@ function M.build_board_issue_line(ctx)
   return "  " .. table.concat(parts, "  ")
 end
 
--- inline-level parser: **bold**, *italic*, `code`, [label](url)
 local function inline_to_nodes(text)
   local nodes = {}
   local len = #text
@@ -187,7 +184,6 @@ local function inline_to_nodes(text)
   end
 
   while i <= len do
-    -- [label](url)
     if text:sub(i, i) == "[" then
       local close_label = text:find("%]", i + 1, true)
       local open_paren = close_label and text:sub(close_label + 1, close_label + 1) == "("
@@ -217,7 +213,6 @@ local function inline_to_nodes(text)
       end
     end
 
-    -- **bold**
     if text:sub(i, i + 1) == "**" then
       local close = text:find("%*%*", i + 2, true)
       if close then
@@ -235,7 +230,6 @@ local function inline_to_nodes(text)
       end
     end
 
-    -- *italic*
     if text:sub(i, i) == "*" then
       local close = text:find("%*", i + 1, true)
       if close then
@@ -253,7 +247,6 @@ local function inline_to_nodes(text)
       end
     end
 
-    -- `code`
     if text:sub(i, i) == "`" then
       local close = text:find("`", i + 1, true)
       if close then
@@ -291,9 +284,7 @@ local function inline_to_nodes(text)
   return nodes
 end
 
--- block-level: paragraphs + fenced code blocks
 local function markdown_to_blocks(md)
-  -- robust: allow ADF passed by mistake
   if type(md) == "table" then
     md = M.adf_to_markdown(md)
   elseif type(md) ~= "string" then
@@ -344,13 +335,11 @@ local function markdown_to_blocks(md)
     local fence_lang = line:match("^```%s*(%S*)%s*$")
     if fence_lang then
       if not in_code then
-        -- start code block
         flush_para()
         in_code = true
         code_lang = fence_lang
         code_lines = {}
       else
-        -- end code block
         flush_code()
         in_code = false
         code_lang = nil
@@ -430,8 +419,41 @@ local function inline_from_nodes(nodes)
       end
 
       table.insert(parts, text)
+
     elseif node.type == "hardBreak" then
       table.insert(parts, "  \n")
+
+    elseif node.type == "inlineCard" then
+      local attrs = node.attrs or {}
+      local href = attrs.url or attrs.href or ""
+      local label = attrs.title or attrs.text or href
+      if href ~= "" then
+        if label == "" then
+          label = href
+        end
+        table.insert(parts, "[" .. label .. "](" .. href .. ")")
+      end
+
+    elseif node.type == "emoji" then
+      local attrs = node.attrs or {}
+      local txt = attrs.text or attrs.shortName or ""
+      if txt ~= "" then
+        table.insert(parts, txt)
+      end
+
+    elseif node.type == "mention" then
+      local attrs = node.attrs or {}
+      local txt = attrs.text or (attrs.id and ("@" .. attrs.id)) or ""
+      if txt ~= "" then
+        table.insert(parts, txt)
+      end
+
+    else
+      if type(node.text) == "string" and node.text ~= "" then
+        table.insert(parts, node.text)
+      elseif node.attrs and type(node.attrs.text) == "string" then
+        table.insert(parts, node.attrs.text)
+      end
     end
   end
 
@@ -448,7 +470,7 @@ local function blocks_to_markdown(doc)
   local function handle_node(node)
     if node.type == "paragraph" then
       table.insert(out, inline_from_nodes(node.content or {}))
-      table.insert(out, "") -- blank line between paragraphs
+      table.insert(out, "")
 
     elseif node.type == "codeBlock" then
       local lang = node.attrs and node.attrs.language or ""
@@ -486,7 +508,6 @@ local function blocks_to_markdown(doc)
     handle_node(doc)
   end
 
-  -- remove trailing blank lines
   while #out > 0 and out[#out]:match("^%s*$") do
     table.remove(out)
   end
