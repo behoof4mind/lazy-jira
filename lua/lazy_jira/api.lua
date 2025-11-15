@@ -42,6 +42,7 @@ function M.get_issue(key)
 				"updated",
 				"description",
 				"comment",
+				"issuelinks",
 			}, ","),
 		},
 	})

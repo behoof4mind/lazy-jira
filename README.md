@@ -1,6 +1,6 @@
 # lazy-jira
 
-A fast, minimal, Neovim-native Jira client designed for real‑world daily usage.  
+A fast, minimal, Neovim-native Jira client designed for real-world daily usage.  
 It gives you **Kanban boards**, **issue viewer**, **status transitions**,  
 **comment editing with Markdown → ADF**, **description editing**,  
 **assignee picker**, and a beautiful floating UI — all inside Neovim.
@@ -19,7 +19,7 @@ It gives you **Kanban boards**, **issue viewer**, **status transitions**,
 
 ### 🧾 Issue View
 
-- Full left-side or split‑window issue viewer
+- Full left-side or split-window issue viewer
 - Shows:
   - Metadata
   - Description
@@ -71,6 +71,7 @@ All conversion is bidirectional:
 ### 🌿 Git workflow helpers
 
 - Create feature branch from issue summary:
+
   ```
   KEY-123/add-cool-feature
   ```
@@ -159,7 +160,7 @@ Create `~/.config/lazy-jira.json`:
 
 Or set environment variables:
 
-```
+```bash
 export LAZY_JIRA_BASE_URL="https://your-domain.atlassian.net"
 export LAZY_JIRA_USERNAME="you@example.com"
 export LAZY_JIRA_TOKEN="your_api_token"
@@ -194,4 +195,4 @@ Tables and images are not supported yet.
 ## 💬 Feedback
 
 Feel free to open issues, propose improvements, or send PRs!  
-This plugin is actively improved and tailored for real-world workflow efficiency.
+This plugin is actively improved and tailored for real‑world workflow efficiency.

@@ -1,9 +1,11 @@
--- lua/lazy_jira/ui/issue.lua
 local api = require("lazy_jira.api")
 local lazy_jira = require("lazy_jira")
 local util = require("lazy_jira.ui.util")
 
-local M = {}
+local M = {
+	_history = {},
+	_suspend_history = false,
+}
 
 local function render_issue_in_current_buf(lines)
 	local layout = lazy_jira.config.layout
@@ -89,25 +91,21 @@ local function open_popup(title, initial_markdown, on_submit)
 		on_submit(text)
 	end
 
-	-- Esc in NORMAL mode = cancel
 	vim.keymap.set("n", "<Esc>", function()
 		if vim.api.nvim_win_is_valid(win) then
 			vim.api.nvim_win_close(win, true)
 		end
 	end, { buffer = buf, silent = true })
 
-	-- Ctrl-S in NORMAL mode = save
 	vim.keymap.set("n", "<C-s>", function()
 		submit_and_close()
 	end, { buffer = buf, silent = true })
 
-	-- Ctrl-S in INSERT mode = save
 	vim.keymap.set("i", "<C-s>", function()
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
 		submit_and_close()
 	end, { buffer = buf, silent = true })
 
-	-- Enter in NORMAL mode = save
 	vim.keymap.set("n", "<CR>", function()
 		submit_and_close()
 	end, { buffer = buf, silent = true })
@@ -140,7 +138,6 @@ function M.change_status(issue_key)
 				prompt_title = "Change Status",
 				layout_strategy = "cursor",
 				layout_config = { width = 0.4, height = 0.3 },
-
 				finder = finders.new_table({
 					results = transitions,
 					entry_maker = function(tr)
@@ -154,9 +151,7 @@ function M.change_status(issue_key)
 						}
 					end,
 				}),
-
 				sorter = conf.generic_sorter({}),
-
 				attach_mappings = function(prompt_bufnr)
 					actions.select_default:replace(function()
 						actions.close(prompt_bufnr)
@@ -183,7 +178,6 @@ function M.change_status(issue_key)
 		return
 	end
 
-	-- Fallback: simple select (if Telescope not installed)
 	local items = {}
 	for _, tr in ipairs(transitions) do
 		local from = tr.name or "?"
@@ -335,7 +329,6 @@ function M.change_assignee(issue_key)
 				prompt_title = "Change assignee for " .. issue_key,
 				layout_strategy = "cursor",
 				layout_config = { width = 0.5, height = 0.4 },
-
 				finder = finders.new_table({
 					results = users,
 					entry_maker = function(u)
@@ -354,9 +347,7 @@ function M.change_assignee(issue_key)
 						}
 					end,
 				}),
-
 				sorter = conf.generic_sorter({}),
-
 				attach_mappings = function(prompt_bufnr)
 					actions.select_default:replace(function()
 						actions.close(prompt_bufnr)
@@ -432,7 +423,33 @@ function M.change_assignee(issue_key)
 	end)
 end
 
+function M.go_back()
+	if not M._history or #M._history == 0 then
+		vim.notify("[lazy_jira] Issue history is empty", vim.log.levels.INFO)
+		return
+	end
+	local key = table.remove(M._history)
+	if not key or key == "" then
+		vim.notify("[lazy_jira] Invalid history entry", vim.log.levels.ERROR)
+		return
+	end
+	M._suspend_history = true
+	M.show_issue(key)
+	M._suspend_history = false
+end
+
 function M.show_issue(key)
+	local cur_ft = vim.bo.filetype
+	if not M._suspend_history and cur_ft == "lazy_jira_issue" then
+		local ok, cur_key = pcall(function()
+			return vim.b.lazy_jira_issue_key
+		end)
+		if ok and cur_key and cur_key ~= "" and cur_key ~= key then
+			M._history = M._history or {}
+			table.insert(M._history, cur_key)
+		end
+	end
+
 	local issue, err = api.get_issue(key)
 	if not issue then
 		vim.notify("[lazy_jira] " .. err, vim.log.levels.ERROR)
@@ -452,7 +469,6 @@ function M.show_issue(key)
 	)
 	table.insert(lines, "")
 
-	-- Metadata
 	table.insert(lines, "■ Metadata")
 	for _, pair in ipairs({
 		{ "Type", f.issuetype and f.issuetype.name or "" },
@@ -472,6 +488,66 @@ function M.show_issue(key)
 
 	for _, ln in ipairs(util.format_description(f.description)) do
 		table.insert(lines, "  " .. ln)
+	end
+
+	local issuelinks = f.issuelinks or {}
+	local linked_groups = {}
+	local has_linked = false
+	local fetched = 0
+	local max_fetch = 10
+
+	for _, link in ipairs(issuelinks) do
+		local ltype = link.type or {}
+		local relation
+		local other
+
+		if link.outwardIssue then
+			relation = ltype.outward or ltype.name or "Related"
+			other = link.outwardIssue
+		elseif link.inwardIssue then
+			relation = ltype.inward or ltype.name or "Related"
+			other = link.inwardIssue
+		end
+
+		if other and other.key then
+			local okey = other.key
+			local summary2 = other.fields and other.fields.summary or nil
+			if not summary2 and fetched < max_fetch then
+				local ok2, linked_issue = pcall(api.get_issue, okey)
+				if ok2 and linked_issue and linked_issue.fields then
+					summary2 = linked_issue.fields.summary or summary2
+				end
+				fetched = fetched + 1
+			end
+			local heading = string.upper(relation or "Related")
+			if not linked_groups[heading] then
+				linked_groups[heading] = {}
+			end
+			table.insert(linked_groups[heading], { key = okey, summary = summary2 or "<no summary>" })
+			has_linked = true
+		end
+	end
+
+	if has_linked then
+		table.insert(lines, "")
+		table.insert(lines, "■ Linked Issues")
+		table.insert(lines, "")
+		local group_names = {}
+		for name, _ in pairs(linked_groups) do
+			table.insert(group_names, name)
+		end
+		table.sort(group_names)
+		for _, heading in ipairs(group_names) do
+			table.insert(lines, heading .. ":")
+			local items = linked_groups[heading]
+			table.sort(items, function(a, b)
+				return a.key < b.key
+			end)
+			for _, li in ipairs(items) do
+				table.insert(lines, string.format("  • %s — %s", li.key, li.summary))
+			end
+			table.insert(lines, "")
+		end
 	end
 
 	local comments = f.comment and f.comment.comments or {}
@@ -505,7 +581,6 @@ function M.show_issue(key)
 
 	render_issue_in_current_buf(lines)
 
-	-- buffer vars for later actions
 	vim.b.lazy_jira_issue_key = key_str
 	vim.b.lazy_jira_issue_url = url
 	vim.b.lazy_jira_comments = meta

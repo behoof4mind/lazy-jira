@@ -1,8 +1,6 @@
--- after/ftplugin/lazy_jira_issue.lua
 local buf = vim.api.nvim_get_current_buf()
 local issue = require("lazy_jira.ui.issue")
 
--- Soft wrap for description and comments
 vim.opt_local.wrap = true
 vim.opt_local.linebreak = true
 vim.opt_local.breakindent = true
@@ -22,7 +20,6 @@ local function buf_command(name, fn)
 	vim.api.nvim_buf_create_user_command(buf, name, fn, {})
 end
 
--- Tiny helper to open centered floating help window
 local function open_help_popup(lines, title)
 	local ui = vim.api.nvim_list_uis()[1]
 	if not ui then
@@ -55,7 +52,6 @@ local function open_help_popup(lines, title)
 	vim.bo[help_buf].modifiable = false
 	vim.bo[help_buf].filetype = "help"
 
-	-- close with q or <Esc>
 	vim.keymap.set("n", "q", function()
 		if vim.api.nvim_win_is_valid(help_win) then
 			vim.api.nvim_win_close(help_win, true)
@@ -69,7 +65,6 @@ local function open_help_popup(lines, title)
 	end, { buffer = help_buf, nowait = true, silent = true })
 end
 
--- Small helpers to get current issue key / url safely
 local function current_issue_key()
 	local ok, key = pcall(function()
 		return vim.b.lazy_jira_issue_key
@@ -96,7 +91,7 @@ buf_command("JiraIssueOpenBrowser", function()
 		vim.notify("[lazy_jira] No issue URL in buffer", vim.log.levels.ERROR)
 		return
 	end
-	vim.fn.jobstart({ "open", url }, { detach = true }) -- macOS; swap to xdg-open on Linux
+	vim.fn.jobstart({ "open", url }, { detach = true })
 end)
 
 buf_command("JiraIssueReload", function()
@@ -239,37 +234,42 @@ buf_command("JiraIssueCreateBranch", function()
 	})
 end)
 
--- Backwards-compat alias
 buf_command("JiraCreateBranch", function()
 	vim.cmd("JiraIssueCreateBranch")
 end)
 
--- go: open in browser
+buf_command("JiraIssueBack", function()
+	issue.go_back()
+end)
+
 map("go", "<cmd>JiraIssueOpenBrowser<CR>", "Open in browser")
 
--- gr: reload issue
 map("gr", "<cmd>JiraIssueReload<CR>", "Reload Jira issue")
 
--- cd: edit description
 map("cd", "<cmd>JiraIssueEditDescription<CR>", "Edit description (popup)")
 
--- cs: change status
 map("cs", "<cmd>JiraIssueChangeStatus<CR>", "Change Jira status")
 
--- cA: change assignee
 map("cA", "<cmd>JiraIssueChangeAssignee<CR>", "Change assignee")
 
--- ca: add comment (floating)
 map("ca", "<cmd>JiraIssueCommentAdd<CR>", "Add Jira comment")
 
--- ce: edit comment under cursor (floating)
 map("ce", "<cmd>JiraIssueCommentEdit<CR>", "Edit Jira comment")
 
--- cr: delete comment under cursor
 map("cr", "<cmd>JiraIssueCommentDelete<CR>", "Delete Jira comment")
 
--- cb: create git branch
 map("cb", "<cmd>JiraIssueCreateBranch<CR>", "Create git branch from issue")
+
+map("gb", "<cmd>JiraIssueBack<CR>", "Go back to previous issue")
+
+map("<CR>", function()
+	local line = vim.api.nvim_get_current_line()
+	local key = line:match("(%u+%-%d+)")
+	if not key then
+		return
+	end
+	require("lazy_jira.ui").show_issue(key)
+end, "Open issue under cursor")
 
 map("?", function()
 	local key = current_issue_key() or "<unknown>"
@@ -280,6 +280,8 @@ map("?", function()
 		"Buffer is showing issue: " .. key,
 		"",
 		"Navigation / actions:",
+		"  <CR>       Open issue under cursor (e.g. linked issue)",
+		"  gb         Go back to previous issue (lazy-jira history)",
 		"  go         Open issue in browser",
 		"  gr         Reload issue",
 		"",
@@ -296,7 +298,7 @@ map("?", function()
 		"Git:",
 		"  cb         Create git branch from issue summary",
 		"",
-		"Commands (for which-key, :cmdline, etc.):",
+		"Commands:",
 		"  :JiraIssueOpenBrowser",
 		"  :JiraIssueReload",
 		"  :JiraIssueEditDescription",
@@ -306,6 +308,7 @@ map("?", function()
 		"  :JiraIssueCommentEdit",
 		"  :JiraIssueCommentDelete",
 		"  :JiraIssueCreateBranch",
+		"  :JiraIssueBack",
 	}
 
 	open_help_popup(lines, "lazy-jira Issue keymap (?)")
