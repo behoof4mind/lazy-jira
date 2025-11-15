@@ -124,6 +124,7 @@ All conversion is bidirectional:
 | Key  | Action                    |
 | ---- | ------------------------- |
 | `go` | Open in browser           |
+| `gk` | Open Kanban board         |
 | `gr` | Reload issue              |
 | `cd` | Edit description          |
 | `cs` | Change status             |

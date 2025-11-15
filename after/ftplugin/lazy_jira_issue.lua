@@ -262,6 +262,8 @@ map("cb", "<cmd>JiraIssueCreateBranch<CR>", "Create git branch from issue")
 
 map("gb", "<cmd>JiraIssueBack<CR>", "Go back to previous issue")
 
+map("gk", "<cmd>JiraKanban<CR>", "Open Kanban board")
+
 map("<CR>", function()
 	local line = vim.api.nvim_get_current_line()
 	local key = line:match("(%u+%-%d+)")
@@ -282,6 +284,7 @@ map("?", function()
 		"Navigation / actions:",
 		"  <CR>       Open issue under cursor (e.g. linked issue)",
 		"  gb         Go back to previous issue (lazy-jira history)",
+		"  gk         Open Kanban board",
 		"  go         Open issue in browser",
 		"  gr         Reload issue",
 		"",
