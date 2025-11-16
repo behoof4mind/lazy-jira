@@ -61,7 +61,7 @@ local function inline_to_plain(nodes)
 end
 
 local function adf_to_plain_lines(desc)
-	if not desc then
+	if desc == nil or desc == vim.NIL then
 		return { "<no description>" }
 	end
 
@@ -70,7 +70,7 @@ local function adf_to_plain_lines(desc)
 	end
 
 	if type(desc) ~= "table" then
-		return { "<unsupported description format>" }
+		return { "<no description>" }
 	end
 
 	local out = {}
