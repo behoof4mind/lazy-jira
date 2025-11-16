@@ -86,17 +86,32 @@ local function is_excluded_column(name)
 	return false
 end
 
-local function is_excluded_issue_type(name)
-	if not name or name == "" then
+local function is_excluded_issue_type(issue)
+	local cfg = lazy_jira.config or {}
+	local excluded = cfg.exclude_issue_types
+
+	if type(excluded) ~= "table" or #excluded == 0 then
 		return false
 	end
 
-	local cfg = lazy_jira.config or {}
+	local name = ""
 
-	local excluded = cfg.exclude_issue_types
+	if type(issue) == "string" then
+		name = issue
+	elseif type(issue) == "table" then
+		if issue.fields and issue.fields.issuetype and issue.fields.issuetype.name then
+			name = issue.fields.issuetype.name
+		elseif issue.issuetype and issue.issuetype.name then
+			name = issue.issuetype.name
+		end
+	end
 
-	for _, n in ipairs(excluded) do
-		if n == name then
+	if name == "" then
+		return false
+	end
+
+	for _, t in ipairs(excluded) do
+		if t == name then
 			return true
 		end
 	end
