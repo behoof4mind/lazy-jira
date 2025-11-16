@@ -3,7 +3,8 @@
 A fast, minimal, Neovim-native Jira client designed for real-world daily usage.  
 It gives you **Kanban boards**, **issue viewer**, **status transitions**,  
 **comment editing with Markdown → ADF**, **description editing**,  
-**assignee picker**, and a beautiful floating UI — all inside Neovim.
+**assignee picker**, **issue jump-back history**,  
+and a beautiful floating UI — all inside Neovim.
 
 ---
 
@@ -23,16 +24,19 @@ It gives you **Kanban boards**, **issue viewer**, **status transitions**,
 - Shows:
   - Metadata
   - Description
+  - Linked issues
   - Comments
-- All formatting cleaned and rendered with readable plain text
-- Press `?` to open a floating help popup with all hotkeys
+- Clean readable formatting converted from Jira ADF → Markdown-like view
+- Press `?` to open a floating help popup
+- Top‑right `[? help]` virtual hint
+- Jump back to previously opened issue
 
 ### 📝 Markdown Editing (ADF conversion)
 
-Works for:
+Supports:
 
-- **bold** → Jira strong
-- _italic_ → Jira emphasis
+- **bold**
+- _italic_
 - `inline code`
 - ```
   fenced
@@ -40,41 +44,46 @@ Works for:
   ```
 - [Links](https://example.com)
 
-All conversion is bidirectional:
+Conversion works both ways:
 
-- Jira ADF → Markdown for editing
-- Markdown → ADF for saving
+- Jira ADF → Markdown when loading
+- Markdown → Jira ADF when saving
 
 ### 💬 Comments
 
 - Add new comment
 - Edit comment (Markdown popup)
 - Delete comment
-- Multiline code blocks supported
+- Proper multi‑line code block support
 
 ### 🗒 Description Editor
 
-- Edit the issue description in a full markdown popup
-- Supports all formatting features listed above
+- Edit the issue description in a centered floating window
+- Fully supports Markdown → ADF conversion
 
 ### 🔄 Status Transitions
 
-- Telescope picker (recommended)
+- Telescope picker first
 - Fallback to `vim.ui.select()` if Telescope is missing
 
 ### 👤 Change Assignee
 
-- Telescope-based user picker
-- Works even if issue has no assignee
-- Shows all assignable users for the project
+- Telescope-powered user picker
+- Works even if the issue has no assignee
+- Shows all assignable users for that issue
 
-### 🌿 Git workflow helpers
+### ↩️ Issue Navigation
 
-- Create feature branch from issue summary:
+- Automatically tracks opened issue history
+- Quickly return to the previous issue
 
-  ```
-  KEY-123/add-cool-feature
-  ```
+### 🌿 Git Workflow Helpers
+
+Creates branches like:
+
+```
+PT-104/upgrade-percona-80
+```
 
 ---
 
@@ -88,10 +97,8 @@ All conversion is bidirectional:
   dependencies = { "nvim-lua/plenary.nvim", "nvim-telescope/telescope.nvim" },
   config = function()
     require("lazy_jira").setup({
-      -- "vsplit" / "hsplit" / "current"
       layout = "vsplit",
 
-      -- What fields to show on kanban lines
       board_line_fields = {
         "key",
         "type",
@@ -99,6 +106,9 @@ All conversion is bidirectional:
         "status",
         "summary",
       },
+
+      -- Optional custom config JSON:
+      -- config_file = "~/.config/lazy-jira.json",
     })
   end,
 }
@@ -124,8 +134,9 @@ All conversion is bidirectional:
 | Key  | Action                    |
 | ---- | ------------------------- |
 | `go` | Open in browser           |
-| `gk` | Open Kanban board         |
+| `gk` | Back to kanban board      |
 | `gr` | Reload issue              |
+| `gb` | Go back to previous issue |
 | `cd` | Edit description          |
 | `cs` | Change status             |
 | `ca` | Add comment               |
@@ -139,17 +150,25 @@ All conversion is bidirectional:
 
 ## ⚙️ Requirements
 
-- Neovim 0.9+
-- Jira Cloud or Jira Server with REST API
+- Neovim **0.9+**
+- Jira Cloud or Jira Server REST API
 - Personal Access Token or Basic Auth
 - `plenary.nvim`
-- (Optional but recommended) `telescope.nvim`
+- _(optional but recommended)_ `telescope.nvim`
 
 ---
 
 ## 🔐 Authentication Setup
 
-Create `~/.config/lazy-jira.json`:
+The plugin loads credentials from JSON.
+
+Default path:
+
+```
+~/.config/nvim/lazy-jira.json
+```
+
+Example file:
 
 ```json
 {
@@ -159,7 +178,15 @@ Create `~/.config/lazy-jira.json`:
 }
 ```
 
-Or set environment variables:
+Or override the file location:
+
+```lua
+require("lazy_jira").setup({
+  config_file = "~/.config/lazy-jira.json",
+})
+```
+
+Or use environment variables:
 
 ```bash
 export LAZY_JIRA_BASE_URL="https://your-domain.atlassian.net"
@@ -169,20 +196,23 @@ export LAZY_JIRA_TOKEN="your_api_token"
 
 ---
 
-## 🧩 API Notes
+## 🧩 ADF ↔ Markdown Notes
 
-### ADF ↔ Markdown
-
-The plugin converts between Jira ADF and Markdown, supporting:
+Supported:
 
 - Bold
 - Italic
 - Inline code
 - Fenced code blocks
 - Links
-- Paragraph structure
+- Paragraphs
+- Lists
 
-Tables and images are not supported yet.
+Not supported yet:
+
+- Tables
+- Images
+- Complex nested formatting
 
 ---
 
@@ -195,5 +225,5 @@ Tables and images are not supported yet.
 
 ## 💬 Feedback
 
-Feel free to open issues, propose improvements, or send PRs!  
-This plugin is actively improved and tailored for real‑world workflow efficiency.
+PRs, ideas, and improvements are welcome!  
+This plugin is actively developed for real-world daily workflow.
