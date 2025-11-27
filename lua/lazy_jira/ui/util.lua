@@ -174,6 +174,96 @@ local function run_pandoc(input, from, to)
 	return output
 end
 
+-- helper: convert Pandoc inlines -> ADF inline nodes, preserving spaces
+local function inlines_to_adf(inlines, active_marks)
+	local out = {}
+	active_marks = active_marks or {}
+
+	local function clone_marks(extra)
+		local marks = {}
+		for i, m in ipairs(active_marks) do
+			marks[i] = m
+		end
+		if extra then
+			table.insert(marks, extra)
+		end
+		if #marks == 0 then
+			return nil
+		end
+		return marks
+	end
+
+	local function push_text(txt, marks)
+		if not txt or txt == "" then
+			return
+		end
+		local node = {
+			type = "text",
+			text = txt,
+		}
+		if marks and #marks > 0 then
+			node.marks = marks
+		end
+		table.insert(out, node)
+	end
+
+	local function walk(inl, marks)
+		if type(inl) ~= "table" then
+			return
+		end
+		marks = marks or active_marks
+
+		if inl.t == "Str" then
+			push_text(inl.c or "", marks)
+		elseif inl.t == "Space" then
+			push_text(" ", marks)
+		elseif inl.t == "SoftBreak" or inl.t == "LineBreak" then
+			-- keep real newlines inside the text
+			push_text("\n", marks)
+		elseif inl.t == "Code" then
+			local code = (type(inl.c) == "table" and inl.c[2]) or inl.c or ""
+			local new_marks = clone_marks({ type = "code" }) or { { type = "code" } }
+			push_text(code, new_marks)
+		elseif inl.t == "Emph" then
+			local new_marks = clone_marks({ type = "em" }) or { { type = "em" } }
+			for _, child in ipairs(inl.c or {}) do
+				walk(child, new_marks)
+			end
+		elseif inl.t == "Strong" then
+			local new_marks = clone_marks({ type = "strong" }) or { { type = "strong" } }
+			for _, child in ipairs(inl.c or {}) do
+				walk(child, new_marks)
+			end
+		elseif inl.t == "Link" then
+			local target = ""
+			if type(inl.c) == "table" and type(inl.c[2]) == "table" then
+				target = inl.c[2][1] or ""
+			end
+			local link_mark = { type = "link", attrs = { href = target } }
+			local new_marks = clone_marks(link_mark) or { link_mark }
+			local inner = (type(inl.c) == "table" and inl.c[1]) or {}
+			for _, child in ipairs(inner or {}) do
+				walk(child, new_marks)
+			end
+		else
+			-- fallback: keep raw string content if present
+			if type(inl.c) == "string" then
+				push_text(inl.c, marks)
+			end
+		end
+	end
+
+	for _, inl in ipairs(inlines or {}) do
+		walk(inl, active_marks)
+	end
+
+	if #out == 0 then
+		return { { type = "text", text = "" } }
+	end
+
+	return out
+end
+
 function M.markdown_to_adf(md)
 	md = md or ""
 
@@ -213,40 +303,7 @@ function M.markdown_to_adf(md)
 
 	local function convert_block(b)
 		if b.t == "Para" then
-			local content = {}
-			for _, inline in ipairs(b.c or {}) do
-				if inline.t == "Code" then
-					table.insert(content, {
-						type = "text",
-						text = inline.c[2],
-						marks = { { type = "code" } },
-					})
-				elseif inline.t == "Str" then
-					table.insert(content, { type = "text", text = inline.c })
-				elseif inline.t == "Emph" then
-					table.insert(content, {
-						type = "text",
-						text = inline.c[1].c,
-						marks = { { type = "em" } },
-					})
-				elseif inline.t == "Strong" then
-					table.insert(content, {
-						type = "text",
-						text = inline.c[1].c,
-						marks = { { type = "strong" } },
-					})
-				else
-					local txt = inline.c or ""
-					if type(txt) == "string" and txt ~= "" then
-						table.insert(content, { type = "text", text = txt })
-					end
-				end
-			end
-
-			if #content == 0 then
-				content = { { type = "text", text = "" } }
-			end
-
+			local content = inlines_to_adf(b.c or {}, {})
 			return {
 				type = "paragraph",
 				content = content,
