@@ -27,6 +27,41 @@ local function decode_or_nil(res)
 	return data, nil
 end
 
+function M.search_issues_by_summary(text, opts)
+	opts = opts or {}
+	local max_results = opts.max_results or 50
+
+	local escaped = text:gsub('"', '\\"')
+
+	local jql = string.format('summary ~ "%s" ORDER BY updated DESC', escaped)
+
+	local req = {
+		jql = jql,
+		maxResults = max_results,
+		fields = "summary,status,assignee,key",
+	}
+
+	local res = http.get("/rest/api/3/search/jql", { query = req })
+	return decode_or_nil(res)
+end
+
+function M.search_my_issues_all_status(opts)
+	opts = opts or {}
+	local max_results = opts.max_results or 100
+
+	local query = {
+		jql = "assignee = currentUser() ORDER BY updated DESC",
+		maxResults = max_results,
+		fields = "summary,status,assignee,key",
+	}
+
+	local res = http.get("/rest/api/3/search/jql", {
+		query = query,
+	})
+
+	return decode_or_nil(res)
+end
+
 function M.get_issue(key)
 	local res = http.get("/rest/api/3/issue/" .. key, {
 		query = {

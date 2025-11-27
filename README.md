@@ -97,7 +97,8 @@ PT-104/upgrade-percona-80
   dependencies = { "nvim-lua/plenary.nvim", "nvim-telescope/telescope.nvim" },
   config = function()
     require("lazy_jira").setup({
-      layout = "vsplit",
+      pandoc_cmd = "pandoc",
+      layout = "current",
 
       board_line_fields = {
         "key",
@@ -106,7 +107,9 @@ PT-104/upgrade-percona-80
         "status",
         "summary",
       },
-
+      exclude_issue_types = { "Epic", "Sub-task" },
+      max_issues_per_column = 200,
+      exclude_columns = { "Backlog" },
       -- Optional custom config JSON:
       -- config_file = "~/.config/lazy-jira.json",
     })

@@ -9,6 +9,14 @@ if not ok_ui then
 	return
 end
 
+vim.api.nvim_create_user_command("JiraSearchTitle", function()
+	require("lazy_jira.ui").search_by_title()
+end, { desc = "Search Jira issues by title" })
+
+vim.api.nvim_create_user_command("JiraMyIssuesAll", function()
+	require("lazy_jira.ui").show_my_issues_all_status()
+end, { desc = "Show all issues assigned to me (any status)" })
+
 -- Change status of current Jira issue
 vim.api.nvim_create_user_command("JiraChangeStatus", function()
 	local ok, issue_ui = pcall(require, "lazy_jira.ui.issue")
