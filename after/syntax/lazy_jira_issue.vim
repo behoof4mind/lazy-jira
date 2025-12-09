@@ -2,7 +2,7 @@
 
 syntax match JiraTitle       /^# .*/
 syntax match JiraSection     /^■ .*/
-syntax match JiraMetaKey     /^\s*•\s\+\w\+:/ 
+syntax match JiraMetaKey     /^\s*•\s\+[^:]\+:/ 
 syntax match JiraUrl         /https:\/\/[A-Za-z0-9._\/\-]\+/
 
 syntax match JiraCommentAuthor /^\s*•\s\+\S.\{-}\s\+—/
