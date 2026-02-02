@@ -1,9 +1,12 @@
--- lua/lazy_jira/ui/board.lua
 local api = require("lazy_jira.api")
-local lazy_jira = require("lazy_jira")
 local ui_util = require("lazy_jira.ui.util")
+local log = require("lazy_jira.log")
+require("lazy_jira.global_config")
 
-local M = {}
+local M = {
+	_history = {},
+	_suspend_history = false,
+}
 
 local ns_help = vim.api.nvim_create_namespace("lazy_jira_help_hint")
 local ns_board = vim.api.nvim_create_namespace("lazy_jira_board")
@@ -76,7 +79,7 @@ local function apply_kanban_highlights(bufnr)
 end
 
 local function is_excluded_column(name)
-	local cfg = lazy_jira.config or {}
+	local cfg = _G._LAZY_JIRA_CONFIG or {}
 	local excluded = cfg.exclude_columns or {}
 	for _, n in ipairs(excluded) do
 		if n == name then
@@ -87,7 +90,7 @@ local function is_excluded_column(name)
 end
 
 local function is_excluded_issue_type(issue)
-	local cfg = lazy_jira.config or {}
+	local cfg = _G._LAZY_JIRA_CONFIG or {}
 	local excluded = cfg.exclude_issue_types
 
 	if type(excluded) ~= "table" or #excluded == 0 then
@@ -128,9 +131,21 @@ local function extract_board_id(url)
 end
 
 local function pick_board_config(name)
-	local cfg = lazy_jira.config or {}
+	log.debug("ui/board.lua: pick_board_config called.")
+	log.debug("ui/board.lua: lazy_jira.config:")
+	log.debug(_G._LAZY_JIRA_CONFIG)
+	log.debug("ui/board.lua: lazy_jira.config.boards:")
+	log.debug(_G._LAZY_JIRA_CONFIG.boards)
+
+	local cfg = _G._LAZY_JIRA_CONFIG or {}
 	local boards = cfg.boards or {}
+
+	log.debug("ui/board.lua: boards table (local variable):")
+	log.debug(boards)
+	log.debug("ui/board.lua: #boards (local variable): " .. #boards)
+
 	if #boards == 0 then
+		log.debug("ui/board.lua: boards table is empty, returning error.")
 		return nil, "No boards configured in lazy_jira.setup({ boards = { ... } })"
 	end
 
@@ -149,7 +164,7 @@ local function pick_board_config(name)
 end
 
 local function open_board_buffer(lines)
-	local layout = lazy_jira.config.layout
+	local layout = _G._LAZY_JIRA_CONFIG.layout
 
 	if layout == "vsplit" then
 		vim.cmd("vsplit")
@@ -236,7 +251,7 @@ function M.show_kanban(board_name)
 			return
 		end
 
-		local cfg = lazy_jira.config or {}
+		local cfg = _G._LAZY_JIRA_CONFIG or {}
 		local max_col = cfg.max_issues_per_column or 100
 
 		local result, ierr = api.get_board_issues_for_statuses(board_id, status_ids, max_col, extra_jql)
@@ -363,3 +378,4 @@ function M.show_kanban(board_name)
 end
 
 return M
+

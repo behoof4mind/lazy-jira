@@ -1,6 +1,7 @@
 local api = require("lazy_jira.api")
-local lazy_jira = require("lazy_jira")
-local util = require("lazy_jira.ui.util")
+local ui_util = require("lazy_jira.ui.util")
+local log = require("lazy_jira.log")
+require("lazy_jira.global_config")
 
 local M = {
 	_history = {},
@@ -19,7 +20,10 @@ local function inline_to_plain(nodes)
 
 		if node.type == "text" then
 			if node.text and node.text ~= "" then
-				table.insert(parts, node.text)
+				-- Split text by newlines and insert each line separately
+				for _, sub_line in ipairs(vim.split(node.text, "\n", { plain = true })) do
+					table.insert(parts, sub_line)
+				end
 			end
 		elseif node.type == "hardBreak" then
 			table.insert(parts, " ")
@@ -122,7 +126,7 @@ local function adf_to_plain_lines(desc)
 					first = false
 				else
 					handle_block(child, "  ")
-				end
+					end
 			end
 			return
 		end
@@ -150,7 +154,7 @@ local function adf_to_plain_lines(desc)
 end
 
 local function render_issue_in_current_buf(lines)
-	local layout = lazy_jira.config.layout
+	local layout = _G._LAZY_JIRA_CONFIG.layout
 	local cur_ft = vim.bo.filetype
 
 	if cur_ft ~= "lazy_jira_board" then
@@ -363,10 +367,10 @@ function M.edit_description()
 	end
 
 	local desc_adf = vim.b.lazy_jira_description_raw
-	local md = util.adf_to_markdown(desc_adf)
+	local md = ui_util.adf_to_markdown(desc_adf)
 
 	open_popup("Edit Description", md, function(new_md)
-		local adf = util.markdown_to_adf(new_md or "")
+		local adf = ui_util.markdown_to_adf(new_md or "")
 		local ok, err = api.update_description(issue_key, adf)
 		if not ok then
 			vim.notify("[lazy_jira] Failed to update description: " .. tostring(err), vim.log.levels.ERROR)
@@ -390,7 +394,7 @@ function M.edit_comment()
 		return
 	end
 
-	local body_md = util.adf_to_markdown(meta.body_raw)
+	local body_md = ui_util.adf_to_markdown(meta.body_raw)
 
 	open_popup("Edit Comment", body_md, function(new_md)
 		local ok, err = api.update_comment(issue_key, meta.id, new_md or "")
@@ -603,10 +607,60 @@ function M.show_issue(key)
 		return
 	end
 
+	log.debug("Rendering issue " .. key)
+	log.debug(issue)
+
 	local f = issue.fields or {}
 	local key_str = issue.key
 	local summary = f.summary or ""
 	local url = issue.self:gsub("/rest/api/.+$", "") .. "/browse/" .. key_str
+
+	-- ----- Parent / Epic detection -----
+	local cfg = _G._LAZY_JIRA_CONFIG or {}
+	local fcfg = cfg.fields or {}
+
+	local epic_key, epic_name
+
+	-- 1) Company-managed “Parent” (like in your screenshot)
+	if f.parent then
+		epic_key = f.parent.key or epic_key
+		if type(f.parent.fields) == "table" then
+			epic_name = f.parent.fields.summary or epic_name
+		end
+	end
+
+	-- 2) Classic “Epic Link” custom field (if configured)
+	if not epic_key and fcfg.epic_link and f[fcfg.epic_link] then
+		epic_key = f[fcfg.epic_link]
+	end
+
+	-- 3) Classic “Epic Name” custom field (if configured)
+	if fcfg.epic_name and f[fcfg.epic_name] then
+		epic_name = f[fcfg.epic_name]
+	end
+
+	log.debug("Detected epic key: " .. tostring(epic_key))
+	log.debug("Detected epic name: " .. tostring(epic_name))
+
+	if epic_key == vim.NIL then
+		epic_key = nil
+	end
+	if epic_name == vim.NIL then
+		epic_name = nil
+	end
+
+	local epic_label
+	if epic_key or epic_name then
+		epic_label = tostring(epic_key or "")
+		if epic_name and tostring(epic_name) ~= "" then
+			if epic_label ~= "" then
+				epic_label = epic_label .. " — " .. tostring(epic_name)
+			else
+				epic_label = tostring(epic_name)
+			end
+		end
+	end
+	-- ----- end Parent / Epic detection -----
 
 	local lines = {}
 	table.insert(lines, "# " .. key_str .. "  " .. summary)
@@ -617,15 +671,19 @@ function M.show_issue(key)
 	table.insert(lines, "")
 
 	table.insert(lines, "■ Metadata")
-	for _, pair in ipairs({
+	local metadata = {
 		{ "Type", f.issuetype and f.issuetype.name or "" },
 		{ "Status", f.status and f.status.name or "" },
 		{ "Assignee", (type(f.assignee) == "table" and f.assignee.displayName) or "Unassigned" },
-		{ "Priority", f.priority and f.priority.name or "" },
-		{ "Created", util.format_datetime(f.created) },
-		{ "Updated", util.format_datetime(f.updated) },
-		{ "URL", url },
-	}) do
+	}
+	if epic_label and epic_label ~= "" then
+		table.insert(metadata, { "Parent/Epic", epic_label })
+	end
+	table.insert(metadata, { "Priority", f.priority and f.priority.name or "" })
+	table.insert(metadata, { "Created", ui_util.format_datetime(f.created) })
+	table.insert(metadata, { "Updated", ui_util.format_datetime(f.updated) })
+	table.insert(metadata, { "URL", url })
+	for _, pair in ipairs(metadata) do
 		table.insert(lines, ("  • %-10s %s"):format(pair[1] .. ":", pair[2]))
 	end
 
@@ -712,7 +770,7 @@ function M.show_issue(key)
 
 	for _, c in ipairs(comments) do
 		local header = #lines + 1
-		table.insert(lines, ("  • %s — %s"):format(c.author.displayName, util.format_datetime(c.created)))
+		table.insert(lines, ("  • %s — %s"):format(c.author.displayName, ui_util.format_datetime(c.created)))
 
 		for _, ln in ipairs(adf_to_plain_lines(c.body)) do
 			table.insert(lines, "    " .. ln)
