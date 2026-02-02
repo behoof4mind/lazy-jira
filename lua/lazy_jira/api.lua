@@ -1,8 +1,11 @@
--- lua/lazy_jira/api.lua
 local http = require("lazy_jira.http")
 local util = require("lazy_jira.ui.util")
+local log = require("lazy_jira.log")
+require("lazy_jira.global_config")
 
 local M = {}
+
+-- Decode helper with better error messages ----------------------------
 
 local function decode_or_nil(res)
 	if not res or not res.status then
@@ -12,7 +15,28 @@ local function decode_or_nil(res)
 	if res.status < 200 or res.status >= 300 then
 		local msg = ("HTTP %d"):format(res.status)
 		local body = res.body or ""
-		return nil, msg .. (body ~= "" and (": " .. body) or "")
+
+		-- Try to show Jira's own error text
+		if body ~= "" then
+			local ok, json = pcall(vim.fn.json_decode, body)
+			if ok and type(json) == "table" then
+				if type(json.errorMessages) == "table" and #json.errorMessages > 0 then
+					msg = msg .. ": " .. table.concat(json.errorMessages, "; ")
+				elseif type(json.errors) == "table" then
+					local parts = {}
+					for k, v in pairs(json.errors) do
+						table.insert(parts, k .. ": " .. v)
+					end
+					if #parts > 0 then
+						msg = msg .. ": " .. table.concat(parts, "; ")
+					end
+				end
+			else
+				msg = msg .. ": " .. body
+			end
+		end
+
+		return nil, msg
 	end
 
 	if not res.body or res.body == "" then
@@ -27,13 +51,22 @@ local function decode_or_nil(res)
 	return data, nil
 end
 
+-- ░░ Search helpers ░░ -------------------------------------------------------
+
+-- Search by summary (used by JiraSearchTitle / telescope, etc.)
 function M.search_issues_by_summary(text, opts)
 	opts = opts or {}
 	local max_results = opts.max_results or 50
+	text = text or ""
 
-	local escaped = text:gsub('"', '\\"')
+	local escaped = text:gsub('"', '"')
 
-	local jql = string.format('summary ~ "%s" ORDER BY updated DESC', escaped)
+	local jql
+	if escaped == "" then
+		jql = "ORDER BY updated DESC"
+	else
+		jql = string.format('summary ~ "%s" ORDER BY updated DESC', escaped)
+	end
 
 	local req = {
 		jql = jql,
@@ -45,6 +78,7 @@ function M.search_issues_by_summary(text, opts)
 	return decode_or_nil(res)
 end
 
+-- "My issues" – all statuses
 function M.search_my_issues_all_status(opts)
 	opts = opts or {}
 	local max_results = opts.max_results or 100
@@ -62,29 +96,7 @@ function M.search_my_issues_all_status(opts)
 	return decode_or_nil(res)
 end
 
-function M.get_issue(key)
-	local res = http.get("/rest/api/3/issue/" .. key, {
-		query = {
-			fields = table.concat({
-				"summary",
-				"status",
-				"assignee",
-				"issuetype",
-				"project",
-				"priority",
-				"labels",
-				"created",
-				"updated",
-				"description",
-				"comment",
-				"issuelinks",
-			}, ","),
-		},
-	})
-
-	return decode_or_nil(res)
-end
-
+-- "My issues" – only not-done
 function M.search_my_issues()
 	local query = {
 		jql = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
@@ -98,6 +110,100 @@ function M.search_my_issues()
 
 	return decode_or_nil(res)
 end
+
+-- Full-text search (used by generic search, can match key or text)
+function M.search_issues_text(query, max_results)
+	query = tostring(query or "")
+	max_results = max_results or 50
+
+	local jql
+
+	if query == "" then
+		jql = "ORDER BY updated DESC"
+	else
+		local key = query:match("(%u+%-%d+)")
+		local escaped = query:gsub('"', '"')
+
+		if key then
+			jql = string.format('key = "%s" OR text ~ "%s" ORDER BY updated DESC', key, escaped)
+		else
+			jql = string.format('text ~ "%s" ORDER BY updated DESC', escaped)
+		end
+	end
+
+	local req = {
+		jql = jql,
+		maxResults = max_results,
+		fields = "summary,status,assignee,key",
+	}
+
+	local res = http.get("/rest/api/3/search/jql", {
+		query = req,
+	})
+
+	return decode_or_nil(res)
+end
+
+-- Recent issues, no filter
+function M.search_recent_issues_any(max_results)
+	local query = {
+		jql = "ORDER BY updated DESC",
+		maxResults = max_results or 100,
+		fields = "summary,status,assignee,key",
+	}
+
+	local res = http.get("/rest/api/3/search/jql", {
+		query = query,
+	})
+
+	return decode_or_nil(res)
+end
+
+function M.get_issue(key)
+	local custom_fields = _G._LAZY_JIRA_CONFIG.fields
+	local all_fields = {
+		"summary",
+		"status",
+		"assignee",
+		"issuetype",
+		"project",
+		"priority",
+		"labels",
+		"created",
+		"updated",
+		"description",
+		"comment",
+		"issuelinks",
+	}
+	if custom_fields.epic_link and custom_fields.epic_link ~= "" then
+		table.insert(all_fields, custom_fields.epic_link)
+	end
+	if custom_fields.epic_name and custom_fields.epic_name ~= "" then
+		table.insert(all_fields, custom_fields.epic_name)
+	end
+	if custom_fields.story_points and custom_fields.story_points ~= "" then
+		table.insert(all_fields, custom_fields.story_points)
+	end
+
+	local res = http.get("/rest/api/3/issue/" .. key, {
+		query = {
+			fields = table.concat(all_fields, ","),
+		},
+	})
+
+	local data, err = decode_or_nil(res)
+	if err then
+		log.debug("Error getting issue " .. key .. ": " .. err)
+		return nil, err
+	end
+
+	log.debug("Got issue " .. key .. ":")
+	log.debug(data)
+
+	return data, nil
+end
+
+-- Transitions --------------------------------------------------------
 
 function M.get_transitions(issue_key)
 	if not issue_key or issue_key == "" then
@@ -143,6 +249,8 @@ function M.transition_issue(issue_key, transition_id)
 
 	return true, nil
 end
+
+-- Comments / description ---------------------------------------------
 
 local function wrap_adf_body(adf_doc)
 	return { body = adf_doc }
@@ -224,6 +332,8 @@ function M.update_description(issue_key, adf_doc)
 	return true, nil
 end
 
+-- Board configuration / issues ---------------------------------------
+
 function M.get_board_configuration(board_id)
 	local res = http.get("/rest/agile/1.0/board/" .. board_id .. "/configuration")
 	return decode_or_nil(res)
@@ -237,6 +347,10 @@ function M.get_board_swimlanes(board_id)
 end
 
 function M.get_board_issues_for_statuses(board_id, status_ids, max_results, extra_jql)
+	if not board_id or board_id == "" then
+		return nil, "board_id is required"
+	end
+
 	local query = {
 		maxResults = max_results or 50,
 	}
@@ -244,6 +358,7 @@ function M.get_board_issues_for_statuses(board_id, status_ids, max_results, extr
 	local jql_parts = {}
 
 	if status_ids and #status_ids > 0 then
+		-- IDs are fine here, Jira accepts numeric status IDs in "status in (...)"
 		table.insert(jql_parts, "status in (" .. table.concat(status_ids, ",") .. ")")
 	end
 
@@ -261,6 +376,8 @@ function M.get_board_issues_for_statuses(board_id, status_ids, max_results, extr
 
 	return decode_or_nil(res)
 end
+
+-- Assignees ----------------------------------------------------------
 
 function M.get_assignable_users(issue_key)
 	if not issue_key or issue_key == "" then
@@ -298,3 +415,4 @@ function M.set_assignee(issue_key, account_id)
 end
 
 return M
+
